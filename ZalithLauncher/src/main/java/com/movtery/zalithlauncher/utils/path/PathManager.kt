@@ -4,7 +4,6 @@ import android.content.Context
 import android.os.Environment
 import androidx.core.content.ContextCompat
 import com.movtery.zalithlauncher.InfoDistributor
-import com.movtery.zalithlauncher.utils.StoragePermissionsUtils
 import org.apache.commons.io.FileUtils
 import java.io.File
 
@@ -17,8 +16,7 @@ class PathManager {
         lateinit var DIR_MULTIRT_HOME: String
 
         @JvmField
-        var DIR_GAME_HOME: String =
-            File(Environment.getExternalStorageDirectory(), "games/${InfoDistributor.LAUNCHER_NAME}").absolutePath
+        var DIR_GAME_HOME: String = ""
 
         lateinit var DIR_LAUNCHER_LOG: String
         lateinit var DIR_CTRLMAP_PATH: String
@@ -49,8 +47,9 @@ class PathManager {
             DIR_CACHE = context.cacheDir
             DIR_MULTIRT_HOME = "$DIR_DATA/runtimes"
 
-            val startupGameHome = resolveStartupGameHome(context)
-            DIR_GAME_HOME = startupGameHome.absolutePath
+            // Keep launcher-managed support files in the app-scoped launcher home.
+            // Do not tie this to shared storage root detection used by the file picker.
+            DIR_GAME_HOME = getLauncherHome(context).absolutePath
 
             DIR_LAUNCHER_LOG = "$DIR_GAME_HOME/launcher_log"
             DIR_CTRLMAP_PATH = "$DIR_GAME_HOME/controlmap"
@@ -78,17 +77,10 @@ class PathManager {
             }
         }
 
-        private fun resolveStartupGameHome(context: Context): File {
-            return if (StoragePermissionsUtils.hasCachedPermission()) {
-                File(getPrimaryStorageRoot(context), "games/${InfoDistributor.LAUNCHER_NAME}")
-            } else {
-                val appExternal = context.getExternalFilesDir(null)
-                if (appExternal != null) {
-                    File(appExternal, "games/${InfoDistributor.LAUNCHER_NAME}")
-                } else {
-                    File(context.filesDir, "games/${InfoDistributor.LAUNCHER_NAME}")
-                }
-            }
+        @JvmStatic
+        fun getLauncherHome(context: Context): File {
+            return context.getExternalFilesDir(null)
+                ?: File(context.filesDir, InfoDistributor.LAUNCHER_NAME)
         }
 
         private fun createRequiredDirectories() {
@@ -102,7 +94,7 @@ class PathManager {
         }
 
         /**
-         * Returns all visible shared storage roots, including removable storage when available.
+         * For file manager browsing and custom profile path selection only.
          * Example results:
          * - /storage/emulated/0
          * - /storage/XXXX-XXXX
