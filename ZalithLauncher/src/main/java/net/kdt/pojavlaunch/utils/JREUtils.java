@@ -106,9 +106,9 @@ public final class JREUtils {
         //dlopen("libSDL3.so");
         //dlopen("libSDL2.so");
 
-        dlopen(DIR_NATIVE_LIB + "/libspirv-cross.so");
+        /*dlopen(DIR_NATIVE_LIB + "/libspirv-cross.so");
         dlopen(DIR_NATIVE_LIB + "/libshaderc.so");
-        dlopen(DIR_NATIVE_LIB + "/liblwjgl_vma.so");
+        dlopen(DIR_NATIVE_LIB + "/liblwjgl_vma.so");*/
         dlopen("libzstd-jni_dh-1.5.7-6.so");
         dlopen(findInLdLibPath("libjli.so"));
         if (!dlopen("libjvm.so")) {

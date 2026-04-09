@@ -93,7 +93,7 @@ public final class Tools {
 
     private static final String DEFAULT_LWJGL_COMPONENT = "lwjgl3";
     private static final String LWJGL_COMPONENT_OVERRIDE_PROPERTY = "pojav.lwjgl.component";
-    private static final String LWJGL_COMPONENT_FALLBACK = "lwjgl3.4.2";
+    private static final String LWJGL_COMPONENT_FALLBACK = "lwjglVulkan";
     private static final String LWJGL_COMPONENT_VULKAN = "lwjglVulkan";
 
     /**

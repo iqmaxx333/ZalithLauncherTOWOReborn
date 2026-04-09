@@ -40,6 +40,7 @@ import com.movtery.zalithlauncher.context.ContextExecutor;
 import com.movtery.zalithlauncher.databinding.ActivityGameBinding;
 import com.movtery.zalithlauncher.databinding.ViewControlMenuBinding;
 import com.movtery.zalithlauncher.databinding.ViewGameMenuBinding;
+import com.movtery.zalithlauncher.event.value.JvmExitEvent;
 import com.movtery.zalithlauncher.feature.MCOptions;
 import com.movtery.zalithlauncher.feature.ProfileLanguageSelector;
 import com.movtery.zalithlauncher.feature.background.BackgroundManager;
@@ -75,6 +76,8 @@ import net.kdt.pojavlaunch.customcontrols.mouse.GyroControl;
 import net.kdt.pojavlaunch.prefs.LauncherPreferences;
 import net.kdt.pojavlaunch.services.GameService;
 
+import org.greenrobot.eventbus.Subscribe;
+import org.greenrobot.eventbus.ThreadMode;
 import org.libsdl.app.SDL;
 import org.libsdl.app.SDLSurface;
 import org.lwjgl.glfw.CallbackBridge;
@@ -112,6 +115,7 @@ public class MainActivity extends BaseActivity implements
     private boolean isInEditor;
     private boolean isKeyboardVisible;
     private boolean isGameServiceBound;
+    private boolean isJvmExiting;
 
     private SimpleTextWatcher inputWatcher;
     private final AnimPlayer inputPreviewAnim = new AnimPlayer();
@@ -260,7 +264,17 @@ public class MainActivity extends BaseActivity implements
                 if (AllSettings.getVirtualMouseStart().getValue()) {
                     binding.mainTouchpad.post(() -> binding.mainTouchpad.switchState());
                 }
+
                 LaunchGame.runGame(this, minecraftVersion, versionInfo);
+
+                Logging.i("MainActivity", "LaunchGame.runGame returned, finishing MainActivity");
+                GameService.setActive(false);
+
+                runOnUiThread(() -> {
+                    if (!isFinishing()) {
+                        finish();
+                    }
+                });
             } catch (Throwable e) {
                 Tools.showErrorRemote(e);
             }
@@ -382,13 +396,39 @@ public class MainActivity extends BaseActivity implements
     @Override
     protected void onPause() {
         gyroControl.disable();
-        if (CallbackBridge.isGrabbing()) {
+
+        if (!isJvmExiting && GameService.isActive() && CallbackBridge.isGrabbing()) {
             sendKeyPress(LwjglGlfwKeycode.GLFW_KEY_ESCAPE);
         }
         CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_FOCUSED, 0);
         CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_HOVERED, 0);
         super.onPause();
     }
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public void onJvmExit(JvmExitEvent event) {
+        Logging.i("MainActivity", "JvmExitEvent received, exitCode=" + event.getExitCode());
+
+        isJvmExiting = true;
+
+        if (binding != null && binding.mainDrawerOptions != null) {
+            binding.mainDrawerOptions.closeDrawers();
+        }
+
+        if (isGameServiceBound) {
+            try {
+                unbindService(this);
+            } catch (IllegalArgumentException ignored) {
+            }
+            isGameServiceBound = false;
+        }
+
+        GameService.setActive(false);
+
+        if (!isFinishing()) {
+            finish();
+        }
+    }
+
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);

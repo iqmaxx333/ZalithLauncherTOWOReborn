@@ -25,7 +25,7 @@ class UnpackComponentsTask(val context: Context, val component: Components) : Ab
                 Components.COMPONENTS -> PathManager.DIR_DATA
 
                 // LWJGL packs are private and should live under context.filesDir.
-                Components.LWJGL3, Components.LWJGL342, Components.LWJGL_VULKAN -> PathManager.DIR_FILE.absolutePath
+                Components.LWJGL3, /*Components.LWJGL342,*/ Components.LWJGL_VULKAN -> PathManager.DIR_FILE.absolutePath
 
                 // Everything else keeps its existing location.
                 else -> if (component.privateDirectory) {
