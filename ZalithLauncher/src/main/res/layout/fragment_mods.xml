@@ -178,6 +178,23 @@
                         android:textSize="@dimen/_10sdp"
                         android:textStyle="bold"
                         app:ripple_for_text="true" />
+                    <com.movtery.zalithlauncher.ui.view.AnimTextView
+                        android:id="@+id/update_all_button"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="@dimen/_10sdp"
+                        android:background="@drawable/button_background"
+                        android:gravity="center"
+                        android:minWidth="@dimen/_82sdp"
+                        android:minHeight="@dimen/_32sdp"
+                        android:paddingHorizontal="@dimen/_12sdp"
+                        android:paddingVertical="@dimen/_6sdp"
+                        android:text="Update All"
+                        android:textColor="@color/primary_text"
+                        android:textSize="@dimen/_10sdp"
+                        android:textStyle="bold"
+                        android:visibility="gone"
+                        app:ripple_for_text="true" />
 
                 </LinearLayout>
                 <TextView

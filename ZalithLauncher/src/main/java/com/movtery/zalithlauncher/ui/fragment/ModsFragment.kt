@@ -16,6 +16,7 @@ import com.movtery.anim.AnimPlayer
 import com.movtery.anim.animations.Animations
 import com.movtery.zalithlauncher.R
 import com.movtery.zalithlauncher.databinding.FragmentModsBinding
+import com.movtery.zalithlauncher.feature.mod.CurseForgeModUpdater
 import com.movtery.zalithlauncher.feature.mod.CurseForgeUpdateChecker
 import com.movtery.zalithlauncher.feature.mod.ModJarIconHelper
 import com.movtery.zalithlauncher.feature.mod.ModToggleHandler
@@ -87,7 +88,11 @@ class ModsFragment : FragmentWithAnim(R.layout.fragment_mods) {
                         FileTools.copyFileInBackground(requireContext(), uri, mRootPath)
                     }
                 }.ended(TaskExecutors.getAndroidUI()) {
-                    Toast.makeText(requireContext(), getString(R.string.profile_mods_added_mod), Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        requireContext(),
+                        getString(R.string.profile_mods_added_mod),
+                        Toast.LENGTH_SHORT
+                    ).show()
                     refreshAndReapply()
                 }.onThrowable { e ->
                     Tools.showErrorRemote(e)
@@ -217,6 +222,7 @@ class ModsFragment : FragmentWithAnim(R.layout.fragment_mods) {
             checkUpdatesModrinthButton.setOnClickListener { runModrinthUpdateCheck() }
             modrinthUpdateInfoButton.setOnClickListener { showModrinthUpdateInfoDialog() }
             checkUpdatesCurseforgeButton.setOnClickListener { runCurseForgeUpdateCheck() }
+            updateAllButton.setOnClickListener { performUpdateAll() }
 
             fileRecyclerView.lockAndListAt(File(mRootPath), File(mRootPath))
         }
@@ -226,9 +232,9 @@ class ModsFragment : FragmentWithAnim(R.layout.fragment_mods) {
 
     private fun showModrinthUpdateInfoDialog() {
         AlertDialog.Builder(requireContext())
-            .setTitle("About Modrinth update checking")
+            .setTitle("About mod update checking")
             .setMessage(
-                "These button checks your installed mods against Modrinth or Curseforge.\n\n" +
+                "These buttons check your installed mods against Modrinth or CurseForge.\n\n" +
                         "If some of your mods were installed from CurseForge and others from Modrinth, " +
                         "the results may not always be accurate. In mixed modpacks, some mods may show " +
                         "as outdated or unknown because the updater is checking against the selected platform.\n\n" +
@@ -243,6 +249,114 @@ class ModsFragment : FragmentWithAnim(R.layout.fragment_mods) {
 
     private fun hasAnyVisibleUpdates(): Boolean {
         return mUpdateResults.values.any { it.status == UpdateUiStatus.UPDATE_AVAILABLE }
+    }
+
+    private fun performUpdateForSelectedFile(selectedFile: File) {
+        val dialog = ZHTools.showTaskRunningDialog(requireContext())
+
+        Task.runTask {
+            when (mActiveUpdateSource) {
+                UpdateSource.CURSEFORGE -> {
+                    CurseForgeModUpdater.updateSingleMod(
+                        context = requireContext(),
+                        installedFile = selectedFile,
+                        minecraftVersion = mMinecraftVersion
+                    ).message
+                }
+
+                UpdateSource.MODRINTH, null -> {
+                    ModrinthModUpdater.updateSingleMod(
+                        context = requireContext(),
+                        installedFile = selectedFile,
+                        minecraftVersion = mMinecraftVersion
+                    ).message
+                }
+            }
+        }.ended(TaskExecutors.getAndroidUI()) { message ->
+            Toast.makeText(
+                requireContext(),
+                message ?: "Update finished",
+                Toast.LENGTH_SHORT
+            ).show()
+            mUpdateResults.remove(selectedFile.absolutePath)
+            refreshAndReapply()
+        }.onThrowable { e ->
+            Tools.showErrorRemote(e)
+        }.finallyTask(TaskExecutors.getAndroidUI()) {
+            dialog.dismiss()
+        }.execute()
+    }
+
+    private fun getFilesWithAvailableUpdates(): List<File> {
+        val sourceItems = mAllModItems.ifEmpty {
+            binding.fileRecyclerView.adapter.data.toMutableList()
+        }
+
+        return sourceItems.mapNotNull { item ->
+            val file = item.file ?: return@mapNotNull null
+            val updateInfo = mUpdateResults[file.absolutePath] ?: return@mapNotNull null
+            if (updateInfo.status == UpdateUiStatus.UPDATE_AVAILABLE) file else null
+        }
+    }
+
+    private fun updateUpdateAllButtonVisibility() {
+        val hasUpdates = mUpdateResults.values.any { it.status == UpdateUiStatus.UPDATE_AVAILABLE }
+        binding.updateAllButton.visibility =
+            if (hasUpdates && mActiveUpdateSource != null) View.VISIBLE else View.GONE
+    }
+
+    private fun performUpdateAll() {
+        val filesToUpdate = getFilesWithAvailableUpdates()
+        if (filesToUpdate.isEmpty()) {
+            Toast.makeText(requireContext(), "No mods need updating.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val dialog = ZHTools.showTaskRunningDialog(requireContext())
+
+        Task.runTask {
+            val messages = mutableListOf<String>()
+
+            for (file in filesToUpdate) {
+                val message = when (mActiveUpdateSource) {
+                    UpdateSource.CURSEFORGE -> {
+                        CurseForgeModUpdater.updateSingleMod(
+                            context = requireContext(),
+                            installedFile = file,
+                            minecraftVersion = mMinecraftVersion
+                        ).message
+                    }
+
+                    UpdateSource.MODRINTH, null -> {
+                        ModrinthModUpdater.updateSingleMod(
+                            context = requireContext(),
+                            installedFile = file,
+                            minecraftVersion = mMinecraftVersion
+                        ).message
+                    }
+                }
+
+                messages.add(message)
+            }
+
+            messages
+        }.ended(TaskExecutors.getAndroidUI()) { messages ->
+            Toast.makeText(
+                requireContext(),
+                "Finished updating ${messages?.size ?: 0} mod(s).",
+                Toast.LENGTH_LONG
+            ).show()
+
+            filesToUpdate.forEach { file ->
+                mUpdateResults.remove(file.absolutePath)
+            }
+
+            refreshAndReapply()
+        }.onThrowable { e ->
+            Tools.showErrorRemote(e)
+        }.finallyTask(TaskExecutors.getAndroidUI()) {
+            dialog.dismiss()
+        }.execute()
     }
 
     private fun openFileActions(selectedFile: File) {
@@ -286,6 +400,7 @@ class ModsFragment : FragmentWithAnim(R.layout.fragment_mods) {
                     filesDialog.dismiss()
                 }
             }
+
             fileName.endsWith(ModUtils.DISABLE_JAR_FILE_SUFFIX) -> {
                 filesDialog.setFileSuffix(ModUtils.DISABLE_JAR_FILE_SUFFIX)
                 filesDialog.setMoreButtonClick {
@@ -298,22 +413,7 @@ class ModsFragment : FragmentWithAnim(R.layout.fragment_mods) {
 
         if (updateAvailable) {
             filesDialog.setExtraButtonClick {
-                val dialog = ZHTools.showTaskRunningDialog(requireContext())
-                Task.runTask {
-                    ModrinthModUpdater.updateSingleMod(
-                        context = requireContext(),
-                        installedFile = selectedFile,
-                        minecraftVersion = mMinecraftVersion
-                    )
-                }.ended(TaskExecutors.getAndroidUI()) { result ->
-                    Toast.makeText(requireContext(), result?.message ?: "Update finished", Toast.LENGTH_SHORT).show()
-                    mUpdateResults.remove(selectedFile.absolutePath)
-                    refreshAndReapply()
-                }.onThrowable { e ->
-                    Tools.showErrorRemote(e)
-                }.finallyTask(TaskExecutors.getAndroidUI()) {
-                    dialog.dismiss()
-                }.execute()
+                performUpdateForSelectedFile(selectedFile)
             }
         }
 
@@ -404,20 +504,26 @@ class ModsFragment : FragmentWithAnim(R.layout.fragment_mods) {
 
                 when (result?.status) {
                     ModrinthUpdateChecker.UpdateStatus.UPDATE_AVAILABLE -> {
-                        val detail = "Update: ${result.installedVersion ?: "?"} → ${result.latestVersion ?: "?"}"
-                        updateAvailable.add("$label (${result.installedVersion ?: "?"} → ${result.latestVersion ?: "?"})")
-                        statusMap[file.absolutePath] = UpdateUiInfo(UpdateUiStatus.UPDATE_AVAILABLE, detail)
+                        val detail =
+                            "Update: ${result.installedVersion ?: "?"} → ${result.latestVersion ?: "?"}"
+                        updateAvailable.add(
+                            "$label (${result.installedVersion ?: "?"} → ${result.latestVersion ?: "?"})"
+                        )
+                        statusMap[file.absolutePath] =
+                            UpdateUiInfo(UpdateUiStatus.UPDATE_AVAILABLE, detail)
                     }
 
                     ModrinthUpdateChecker.UpdateStatus.UP_TO_DATE -> {
                         upToDate.add(label)
-                        statusMap[file.absolutePath] = UpdateUiInfo(UpdateUiStatus.UP_TO_DATE, "Up to date")
+                        statusMap[file.absolutePath] =
+                            UpdateUiInfo(UpdateUiStatus.UP_TO_DATE, "Up to date")
                     }
 
                     else -> {
                         val reason = result?.reason ?: "Update status unknown"
                         unknown.add(label)
-                        statusMap[file.absolutePath] = UpdateUiInfo(UpdateUiStatus.UNKNOWN, reason)
+                        statusMap[file.absolutePath] =
+                            UpdateUiInfo(UpdateUiStatus.UNKNOWN, reason)
                     }
                 }
             }
@@ -441,10 +547,11 @@ class ModsFragment : FragmentWithAnim(R.layout.fragment_mods) {
             binding.showUpdatesOnly.isChecked = mShowUpdatesOnly
 
             applyUpdateResultsToVisibleItems()
-
+            updateUpdateAllButtonVisibility()
             Toast.makeText(
                 requireContext(),
-                "Modrinth updates: ${safeResult.updates.size}\nUp to date: ${safeResult.current.size}" +
+                "Modrinth updates: ${safeResult.updates.size}\n" +
+                        "Up to date: ${safeResult.current.size}" +
                         (if (safeResult.unknown.isNotEmpty()) "\nUnknown: ${safeResult.unknown.size}" else ""),
                 Toast.LENGTH_LONG
             ).show()
@@ -496,20 +603,26 @@ class ModsFragment : FragmentWithAnim(R.layout.fragment_mods) {
 
                 when (result?.status) {
                     CurseForgeUpdateChecker.UpdateStatus.UPDATE_AVAILABLE -> {
-                        val detail = "Update: ${result.installedVersion ?: "?"} → ${result.latestVersion ?: "?"}"
-                        updateAvailable.add("$label (${result.installedVersion ?: "?"} → ${result.latestVersion ?: "?"})")
-                        statusMap[file.absolutePath] = UpdateUiInfo(UpdateUiStatus.UPDATE_AVAILABLE, detail)
+                        val detail =
+                            "Update: ${result.installedVersion ?: "?"} → ${result.latestVersion ?: "?"}"
+                        updateAvailable.add(
+                            "$label (${result.installedVersion ?: "?"} → ${result.latestVersion ?: "?"})"
+                        )
+                        statusMap[file.absolutePath] =
+                            UpdateUiInfo(UpdateUiStatus.UPDATE_AVAILABLE, detail)
                     }
 
                     CurseForgeUpdateChecker.UpdateStatus.UP_TO_DATE -> {
                         upToDate.add(label)
-                        statusMap[file.absolutePath] = UpdateUiInfo(UpdateUiStatus.UP_TO_DATE, "Up to date")
+                        statusMap[file.absolutePath] =
+                            UpdateUiInfo(UpdateUiStatus.UP_TO_DATE, "Up to date")
                     }
 
                     else -> {
                         val reason = result?.reason ?: "Update status unknown"
                         unknown.add(label)
-                        statusMap[file.absolutePath] = UpdateUiInfo(UpdateUiStatus.UNKNOWN, reason)
+                        statusMap[file.absolutePath] =
+                            UpdateUiInfo(UpdateUiStatus.UNKNOWN, reason)
                     }
                 }
             }
@@ -533,10 +646,11 @@ class ModsFragment : FragmentWithAnim(R.layout.fragment_mods) {
             binding.showUpdatesOnly.isChecked = mShowUpdatesOnly
 
             applyUpdateResultsToVisibleItems()
-
+            updateUpdateAllButtonVisibility()
             Toast.makeText(
                 requireContext(),
-                "CurseForge updates: ${safeResult.updates.size}\nUp to date: ${safeResult.current.size}" +
+                "CurseForge updates: ${safeResult.updates.size}\n" +
+                        "Up to date: ${safeResult.current.size}" +
                         (if (safeResult.unknown.isNotEmpty()) "\nUnknown: ${safeResult.unknown.size}" else ""),
                 Toast.LENGTH_LONG
             ).show()
@@ -549,12 +663,20 @@ class ModsFragment : FragmentWithAnim(R.layout.fragment_mods) {
 
     private fun refreshAndReapply() {
         binding.fileRecyclerView.refreshPath()
+
+        val hasUpdates = mUpdateResults.values.any { it.status == UpdateUiStatus.UPDATE_AVAILABLE }
+        if (!hasUpdates) {
+            mShowUpdatesOnly = false
+            binding.showUpdatesOnly.isChecked = false
+            binding.showUpdatesOnly.visibility = View.GONE
+        }
+
         if (mUpdateResults.isEmpty()) {
             mAllModItems.clear()
-            binding.showUpdatesOnly.visibility = View.GONE
-            mShowUpdatesOnly = false
         }
+
         applyUpdateResultsToVisibleItems()
+        updateUpdateAllButtonVisibility()
     }
 
     private fun startNewbieGuide() {
@@ -563,11 +685,36 @@ class ModsFragment : FragmentWithAnim(R.layout.fragment_mods) {
             val fragmentActivity = requireActivity()
             TapTargetSequence(fragmentActivity)
                 .targets(
-                    NewbieGuideUtils.getSimpleTarget(fragmentActivity, refreshButton, getString(R.string.generic_refresh), getString(R.string.newbie_guide_general_refresh)),
-                    NewbieGuideUtils.getSimpleTarget(fragmentActivity, searchButton, getString(R.string.generic_search), getString(R.string.newbie_guide_mod_search)),
-                    NewbieGuideUtils.getSimpleTarget(fragmentActivity, addFileButton, getString(R.string.profile_mods_add_mod), getString(R.string.newbie_guide_mod_import)),
-                    NewbieGuideUtils.getSimpleTarget(fragmentActivity, createFolderButton, getString(R.string.profile_mods_download_mod), getString(R.string.newbie_guide_mod_download)),
-                    NewbieGuideUtils.getSimpleTarget(fragmentActivity, returnButton, getString(R.string.generic_close), getString(R.string.newbie_guide_general_close))
+                    NewbieGuideUtils.getSimpleTarget(
+                        fragmentActivity,
+                        refreshButton,
+                        getString(R.string.generic_refresh),
+                        getString(R.string.newbie_guide_general_refresh)
+                    ),
+                    NewbieGuideUtils.getSimpleTarget(
+                        fragmentActivity,
+                        searchButton,
+                        getString(R.string.generic_search),
+                        getString(R.string.newbie_guide_mod_search)
+                    ),
+                    NewbieGuideUtils.getSimpleTarget(
+                        fragmentActivity,
+                        addFileButton,
+                        getString(R.string.profile_mods_add_mod),
+                        getString(R.string.newbie_guide_mod_import)
+                    ),
+                    NewbieGuideUtils.getSimpleTarget(
+                        fragmentActivity,
+                        createFolderButton,
+                        getString(R.string.profile_mods_download_mod),
+                        getString(R.string.newbie_guide_mod_download)
+                    ),
+                    NewbieGuideUtils.getSimpleTarget(
+                        fragmentActivity,
+                        returnButton,
+                        getString(R.string.generic_close),
+                        getString(R.string.newbie_guide_general_close)
+                    )
                 )
                 .start()
         }
@@ -580,6 +727,7 @@ class ModsFragment : FragmentWithAnim(R.layout.fragment_mods) {
             updateActionsRow.visibility = View.VISIBLE
             showUpdatesOnly.visibility = getUpdatesOnlyVisibility()
         }
+        updateUpdateAllButtonVisibility()
     }
 
     private fun getUpdatesOnlyVisibility(): Int {
@@ -627,9 +775,7 @@ class ModsFragment : FragmentWithAnim(R.layout.fragment_mods) {
     }
 
     private fun applyUpdateResultsToVisibleItems() {
-        val sourceItems = if (mAllModItems.isNotEmpty()) {
-            mAllModItems
-        } else {
+        val sourceItems = mAllModItems.ifEmpty {
             binding.fileRecyclerView.adapter.data.toMutableList()
         }
 
@@ -677,7 +823,9 @@ class ModsFragment : FragmentWithAnim(R.layout.fragment_mods) {
                 createFolderButton.setImageDrawable(
                     ContextCompat.getDrawable(requireContext(), R.drawable.ic_download)
                 )
-                pasteButton.setVisibility(if (PasteFile.getInstance().pasteType != null) View.VISIBLE else View.GONE)
+                pasteButton.setVisibility(
+                    if (PasteFile.getInstance().pasteType != null) View.VISIBLE else View.GONE
+                )
 
                 ZHTools.setTooltipText(
                     returnButton,

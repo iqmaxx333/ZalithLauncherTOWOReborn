@@ -1,5 +1,7 @@
 package com.movtery.zalithlauncher.feature.download.utils
 
+import android.content.Context
+import com.movtery.zalithlauncher.feature.mod.ModJarIconHelper
 import java.io.File
 import java.io.FileInputStream
 import java.security.MessageDigest
@@ -11,16 +13,25 @@ object InstalledDependencyUtils {
 
     data class InstalledIndex(
         val fileNames: Set<String>,
-        val sha1Hashes: Set<String>
+        val sha1Hashes: Set<String>,
+        val modFilesById: Map<String, MutableList<File>>
     )
 
-    fun buildInstalledIndex(modsDir: File): InstalledIndex {
+    fun buildInstalledIndex(
+        context: Context,
+        modsDir: File
+    ): InstalledIndex {
         if (!modsDir.exists() || !modsDir.isDirectory) {
-            return InstalledIndex(emptySet(), emptySet())
+            return InstalledIndex(
+                emptySet(),
+                emptySet(),
+                emptyMap()
+            )
         }
 
         val fileNames = LinkedHashSet<String>()
         val sha1Hashes = LinkedHashSet<String>()
+        val modFilesById = LinkedHashMap<String, MutableList<File>>()
 
         modsDir.listFiles()
             ?.filter { file ->
@@ -36,9 +47,15 @@ object InstalledDependencyUtils {
                 if (!sha1.isNullOrBlank()) {
                     sha1Hashes.add(sha1.lowercase(Locale.ROOT))
                 }
+
+                val modInfo = runCatching { ModJarIconHelper.read(context, file) }.getOrNull()
+                val modId = modInfo?.modId?.trim()?.lowercase(Locale.ROOT)
+                if (!modId.isNullOrBlank()) {
+                    modFilesById.getOrPut(modId) { mutableListOf() }.add(file)
+                }
             }
 
-        return InstalledIndex(fileNames, sha1Hashes)
+        return InstalledIndex(fileNames, sha1Hashes, modFilesById)
     }
 
     fun isAlreadyInstalled(
@@ -58,6 +75,50 @@ object InstalledDependencyUtils {
         }
 
         return false
+    }
+
+    fun findInstalledFilesByModId(
+        index: InstalledIndex,
+        modId: String?
+    ): List<File> {
+        val normalizedModId = modId?.trim()?.lowercase(Locale.ROOT)
+        if (normalizedModId.isNullOrBlank()) return emptyList()
+        return index.modFilesById[normalizedModId].orEmpty()
+    }
+
+    fun removeOldVersionsOfSameMod(
+        context: Context,
+        modsDir: File,
+        downloadedFile: File
+    ) {
+        if (!downloadedFile.exists()) return
+
+        val downloadedInfo = runCatching {
+            ModJarIconHelper.read(context, downloadedFile)
+        }.getOrNull() ?: return
+
+        val downloadedModId = downloadedInfo.modId?.trim()?.lowercase(Locale.ROOT)
+        if (downloadedModId.isNullOrBlank()) return
+
+        modsDir.listFiles()
+            ?.filter { file ->
+                file.isFile &&
+                        file.absolutePath != downloadedFile.absolutePath &&
+                        (
+                                file.name.endsWith(JAR_SUFFIX, ignoreCase = true) ||
+                                        file.name.endsWith(DISABLED_JAR_SUFFIX, ignoreCase = true)
+                                )
+            }
+            ?.forEach { existingFile ->
+                val existingInfo = runCatching {
+                    ModJarIconHelper.read(context, existingFile)
+                }.getOrNull()
+
+                val existingModId = existingInfo?.modId?.trim()?.lowercase(Locale.ROOT)
+                if (existingModId == downloadedModId) {
+                    existingFile.delete()
+                }
+            }
     }
 
     private fun normalizeFileName(fileName: String?): String {

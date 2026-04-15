@@ -1,5 +1,6 @@
 package com.movtery.zalithlauncher.feature.download.platform.curseforge
 
+import android.content.Context
 import android.widget.Toast
 import com.movtery.zalithlauncher.R
 import com.movtery.zalithlauncher.context.ContextExecutor
@@ -89,14 +90,21 @@ class CurseForgeHelper : AbstractPlatformHelper(PlatformUtils.createCurseForgeAp
     }
 
     @Throws(Throwable::class)
-    override fun installMod(infoItem: InfoItem, version: VersionItem, targetPath: File, progressKey: String) {
+    override fun installMod(
+        context: Context,
+        infoItem: InfoItem,
+        version: VersionItem,
+        targetPath: File,
+        progressKey: String
+    ) {
         Task.runTask {
             CurseForgeAutoInstallHelper.installModWithDependencies(
                 api,
                 infoItem,
                 version,
                 targetPath,
-                progressKey
+                progressKey,
+                context
             )
         }.execute()
     }

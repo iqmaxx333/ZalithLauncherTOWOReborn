@@ -1,5 +1,6 @@
 package com.movtery.zalithlauncher.feature.download.platform.modrinth
 
+import android.content.Context
 import com.google.gson.JsonObject
 import com.movtery.zalithlauncher.feature.download.enums.Classify
 import com.movtery.zalithlauncher.feature.download.enums.DependencyType
@@ -29,7 +30,8 @@ object ModrinthAutoInstallHelper {
         infoItem: InfoItem,
         version: VersionItem,
         targetPath: File,
-        progressKey: String
+        progressKey: String,
+        context: Context
     ) {
         val rootVersion = version as? ModVersionItem
             ?: throw IllegalArgumentException("Modrinth auto install requires ModVersionItem")
@@ -40,7 +42,9 @@ object ModrinthAutoInstallHelper {
             targetPath.parentFile ?: targetPath
         }
 
-        val installedIndex = InstalledDependencyUtils.buildInstalledIndex(targetDir)
+        var installedIndex = context?.let {
+            InstalledDependencyUtils.buildInstalledIndex(it, targetDir)
+        }
 
         val installPlan = resolveInstallPlan(
             api = api,
@@ -51,7 +55,15 @@ object ModrinthAutoInstallHelper {
 
         for ((_, entry) in installPlan) {
             val outputFile = File(targetDir, entry.versionItem.fileName)
-            InstallHelper.downloadFile(entry.versionItem, outputFile, progressKey)
+            InstallHelper.downloadFile(entry.versionItem, outputFile, progressKey) { downloadedFile ->
+                InstalledDependencyUtils.removeOldVersionsOfSameMod(
+                    context = context,
+                    modsDir = targetDir,
+                    downloadedFile = downloadedFile
+                )
+
+                installedIndex = InstalledDependencyUtils.buildInstalledIndex(context, targetDir)
+            }
         }
     }
 
@@ -60,7 +72,7 @@ object ModrinthAutoInstallHelper {
         api: ApiHandler,
         rootInfoItem: InfoItem,
         rootVersion: ModVersionItem,
-        installedIndex: InstalledDependencyUtils.InstalledIndex
+        installedIndex: InstalledDependencyUtils.InstalledIndex?
     ): LinkedHashMap<String, ResolvedInstallEntry> {
         val resolved = LinkedHashMap<String, ResolvedInstallEntry>()
         val visited = LinkedHashSet<String>()
@@ -85,18 +97,19 @@ object ModrinthAutoInstallHelper {
         currentVersion: ModVersionItem,
         resolved: LinkedHashMap<String, ResolvedInstallEntry>,
         visited: LinkedHashSet<String>,
-        installedIndex: InstalledDependencyUtils.InstalledIndex,
+        installedIndex: InstalledDependencyUtils.InstalledIndex?,
         isRoot: Boolean
     ) {
         if (!visited.add(currentInfoItem.projectId)) return
 
-        if (
-            isRoot || !InstalledDependencyUtils.isAlreadyInstalled(
-                installedIndex,
-                currentVersion.fileName,
-                currentVersion.fileHash
-            )
-        ) {
+        val alreadyInstalled = installedIndex != null &&
+                InstalledDependencyUtils.isAlreadyInstalled(
+                    installedIndex,
+                    currentVersion.fileName,
+                    currentVersion.fileHash
+                )
+
+        if (isRoot || !alreadyInstalled) {
             resolved[currentInfoItem.projectId] = ResolvedInstallEntry(
                 infoItem = currentInfoItem,
                 versionItem = currentVersion
@@ -121,13 +134,14 @@ object ModrinthAutoInstallHelper {
                 parentVersion = currentVersion
             ) ?: continue
 
-            if (
-                InstalledDependencyUtils.isAlreadyInstalled(
-                    installedIndex,
-                    dependencyVersion.fileName,
-                    dependencyVersion.fileHash
-                )
-            ) {
+            val dependencyAlreadyInstalled = installedIndex != null &&
+                    InstalledDependencyUtils.isAlreadyInstalled(
+                        installedIndex,
+                        dependencyVersion.fileName,
+                        dependencyVersion.fileHash
+                    )
+
+            if (dependencyAlreadyInstalled) {
                 continue
             }
 
@@ -152,7 +166,10 @@ object ModrinthAutoInstallHelper {
     ): ModVersionItem? {
         dependencyRef.versionId?.let { exactVersionId ->
             val exactVersion = getVersionById(api, exactVersionId)
-            if (exactVersion != null && matchesParentMc(exactVersion, parentVersion) && matchesParentLoader(exactVersion, parentVersion)) {
+            if (exactVersion != null &&
+                matchesParentMc(exactVersion, parentVersion) &&
+                matchesParentLoader(exactVersion, parentVersion)
+            ) {
                 return exactVersion
             }
         }
