@@ -10,13 +10,14 @@ import com.movtery.zalithlauncher.utils.path.UrlManager
 
 class LocalAccountUtils {
     companion object {
+        /**
+         * Метод изменен: проверка на Microsoft аккаунт удалена.
+         * Теперь использование оффлайн/локальных аккаунтов разрешено всегда.
+         */
         @JvmStatic
         fun checkUsageAllowed(listener: CheckResultListener) {
-            if (AccountsManager.hasMicrosoftAccount()) {
-                listener.onUsageAllowed()
-            } else {
-                listener.onUsageDenied()
-            }
+            // Мы сразу вызываем метод "разрешено", игнорируя наличие лицензии
+            listener.onUsageAllowed()
         }
 
         @JvmStatic
@@ -32,17 +33,18 @@ class LocalAccountUtils {
             message: String?,
             confirm: Int
         ) {
-            TipDialog.Builder(activity)
-                .setTitle(R.string.generic_warning)
-                .setMessage(message)
-                .setWarning()
-                .setShowCheckBox(true)
-                .setCheckBox(R.string.generic_no_more_reminders)
-                .setConfirmClickListener(confirmClickListener)
-                .setConfirm(confirm)
-                .setCancelClickListener { ZHTools.openLink(activity, UrlManager.URL_MINECRAFT) }
-                .setCancel(R.string.account_purchase_minecraft_account)
-                .showDialog()
+            // Используем apply для более чистого кода настройки диалога
+            TipDialog.Builder(activity).apply {
+                setTitle(R.string.generic_warning)
+                setMessage(message)
+                setWarning()
+                setShowCheckBox(true)
+                setCheckBox(R.string.generic_no_more_reminders)
+                setConfirmClickListener(confirmClickListener)
+                setConfirm(confirm)
+                setCancelClickListener { ZHTools.openLink(activity, UrlManager.URL_MINECRAFT) }
+                setCancel(R.string.account_purchase_minecraft_account)
+            }.showDialog()
         }
     }
 
