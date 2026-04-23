@@ -33,7 +33,6 @@ class LocalAccountUtils {
             message: String?,
             confirm: Int
         ) {
-            // Используем apply для более чистого кода настройки диалога
             TipDialog.Builder(activity).apply {
                 setTitle(R.string.generic_warning)
                 setMessage(message)
@@ -42,8 +41,10 @@ class LocalAccountUtils {
                 setCheckBox(R.string.generic_no_more_reminders)
                 setConfirmClickListener(confirmClickListener)
                 setConfirm(confirm)
-                setCancelClickListener { ZHTools.openLink(activity, UrlManager.URL_MINECRAFT) }
                 setCancel(R.string.account_purchase_minecraft_account)
+                setCancelClickListener { 
+                    ZHTools.openLink(activity, UrlManager.URL_MINECRAFT) 
+                }
             }.showDialog()
         }
     }
